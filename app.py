@@ -1825,6 +1825,8 @@ def focus_mark_done(task_id):
     return jsonify({"message": "Task marked done and removed from Focus Board"})
 
 
+import os
+
 if __name__ == '__main__':
     # Ensure user_preferences table exists
     try:
@@ -1849,5 +1851,6 @@ if __name__ == '__main__':
     # Run migration before starting the app
     ensure_is_deleted_column()
 
-    app.run(debug=True)
-
+    # Get port from Render environment (defaults to 5000 locally)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
