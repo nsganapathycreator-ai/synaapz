@@ -1,1 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SynAppz</title>
+    <!-- Apply saved theme before first paint (no white flash in dark mode) -->
+    <script>try{if(localStorage.getItem('synappz_theme')==='dark'){document.documentElement.classList.add('dark-mode');}}catch(e){}</script>
+    <!-- Include Font Awesome for professional icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Chart.js for Dashboard -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- CRITICAL FIX: Use url_for to link CSS correctly via Flask -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
 
+    <!-- Main Container for the entire application layout -->
+    <div id="mobile-nav-overlay" onclick="closeMobileNav()"></div>
+    <div id="app-container">
+
+    <script src="{{ url_for('static', filename='markdown_utils.js') }}"></script>
+    <script src="{{ url_for('static', filename='subtasks.js') }}"></script>
+    <!-- SheetJS for Excel import/export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+        <!-- 1. Left Navigation Sidebar -->
+        <aside id="sidebar">
+            <div id="logo-section">
+                <!-- App Title in Sidebar Header -->
+                <i class="fa-solid fa-brain"></i>
+            </div>
+            <nav id="nav-links">
+                <a href="#" class="nav-item active" id="nav-home">
+                    <i class="fa-solid fa-house"></i>
+                    <span>Home</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-search">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <span>Search</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-focus">
+                    <i class="fa-solid fa-crosshairs"></i>
+                    <span>Focus Board</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-data" style="display: none;">
+                    <i class="fa-solid fa-database"></i>
+                    <span>Data</span>
+                </a>
+                <div class="nav-separator"></div>
+                <a href="#" class="nav-item" id="nav-projects">
+                    <i class="fa-solid fa-diagram-project"></i>
+                    <span>Projects</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-tasks">
+                    <i class="fa-solid fa-square-check"></i>
+                    <span>Tasks</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-problems">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span>Problems</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-routines">
+                    <i class="fa-solid fa-rotate"></i>
+                    <span>Routines</span>
+                </a>
+                <div class="nav-separator"></div>
+                <a href="#" class="nav-item" id="nav-calendar">
+                    <i class="fa-solid fa-calendar-days"></i>
+                    <span>Calendar</span>
+                </a>
+                <div class="nav-separator"></div>
+                <a href="#" class="nav-item" id="nav-faq-quickinfo">
+                    <i class="fa-solid fa-info-circle"></i>
+                    <span>Quick Info</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-faq-quicklinks" style="display: none;">
+                    <i class="fa-solid fa-link"></i>
+                    <span>Quick Links</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-faq-logs" style="display: none;">
+                    <i class="fa-solid fa-file-lines"></i>
+                    <span>Logs</span>
+                </a>
+                <div class="nav-separator"></div>
+                <a href="#" class="nav-item" id="nav-dashboard" style="display: none;">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-archive" style="display: none;">
+                    <i class="fa-solid fa-box-archive"></i>
+                    <span>Archive</span>
+                </a>
+                <a href="#" class="nav-item" id="nav-trash">
+                    <i class="fa-solid fa-trash"></i>
+                    <span>Trash</span>
+                </a>
+            </nav>
+            <!-- Toggle text button -->
+            <button onclick="toggleNavText()" style="width: 100%; padding: 12px; background-color: rgba(0,0,0,0.15); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 5px;">
+                <i class="fa-solid fa-eye-slash" id="nav-text-icon"></i>
+                <span id="nav-toggle-text">Hide Text</span>
+            </button>
+            <!-- Bottom fixed item: Settings -->
+            <a href="#" class="nav-item nav-settings" id="nav-settings">
+                <i class="fa-solid fa-gear"></i>
+                <span>Settings</span>
+            </a>
+        </aside>
+
+        <!-- Container for Header and Main Content -->
+        <div id="content-area">
+            
+            <!-- 2. Top Header Bar -->
+            <header id="top-bar">
+                <button id="mobile-nav-toggle" onclick="toggleMobileNav()" title="Open menu" aria-label="Open navigation menu">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div id="app-title">
+                    <i class="fa-solid fa-brain"></i>
+                    <h1>SynAppz</h1>
+                </div>
+                <!-- This is where future buttons/user profile will go -->
+                <div id="top-bar-actions" style="display: flex; gap: 10px;">
+                    <button id="theme-toggle" onclick="quickToggleTheme()" title="Switch to dark mode" aria-label="Toggle dark mode" aria-pressed="false">
+                        <i class="fa-solid fa-moon"></i>
+                    </button>
+                    <button onclick="openImportTasksModal()" title="Import Tasks" style="padding: 8px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
+                        <i class="fa-solid fa-file-import"></i> <span class="btn-label">Import Tasks</span>
+                    </button>
+                    <button onclick="exportTasksToExcel()" title="Export Tasks" style="padding: 8px 15px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
+                        <i class="fa-solid fa-file-excel"></i> <span class="btn-label">Export Tasks</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- 3. Main Content Area -->
+            <main id="main-content">
+                <!-- Content for the selected page will load here -->
+                <p style="padding: 20px; color: var(--fg-6c757d);">Loading SynAppz…</p>
+            </main>
+
+        </div>
+    </div>
+
+    <!-- Global Notification Container -->
+    <div id="notification-container" style="position: fixed; bottom: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: 10px; max-width: 400px;"></div>
+
+    <!-- CRITICAL FIX: Use url_for to link JS correctly via Flask -->
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+<script src="{{ url_for('static', filename='template-editing.js') }}"></script>
+</body>
+</html>
