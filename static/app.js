@@ -1,6 +1,6 @@
-// app.js - SynAppz v35 (mobile-friendly: whole app)
+// app.js - SynAppz v36 (simple mobile views for Tasks/Projects + Desktop View toggle)
 
-console.log('🚀 SynAppz v35 loaded');
+console.log('🚀 SynAppz v36 loaded');
 
 // Theme (light/dark) is applied before first paint by an inline script in index.html,
 // then synced with the saved preference - see THEME section below.
@@ -1678,6 +1678,11 @@ function initializeTasksTable() {
  */
 function renderTasksTable() {
     const container = document.getElementById('tasks-table-container');
+    
+    if (isMobileLayout()) {
+        renderTasksMobileSimple(container, (allTasks || []).filter(t => t.is_archived !== 1 && !t.is_deleted));
+        return;
+    }
     
     if (currentView === 'kanban') {
         renderKanbanView();
@@ -3748,6 +3753,16 @@ function initializeProjectsKanban() {
  */
 function renderProjectsKanban() {
     const container = document.getElementById('projects-kanban-container');
+    
+    if (isMobileLayout()) {
+        if (projectsMobileDrillId) {
+            renderProjectsMobileDrill(container);
+        } else {
+            renderProjectsMobileList(container);
+        }
+        return;
+    }
+    
     const projects = lookupData.projects || [];
     
     // Check if panel is minimized (stored in state)
@@ -9799,6 +9814,57 @@ async function getPreference(key, defaultValue = null) {
 // Adding the "dark-mode" class to <html> switches them.
 
 // ========================================================================
+//        RESPONSIVE LAYOUT MODE (simple mobile views vs full desktop)
+// ========================================================================
+// "mobile-layout-active" = screen is narrow AND the person hasn't asked for
+// the full desktop layout. Forcing desktop view (see switchToDesktopView)
+// turns off every mobile adaptation, so a phone shows the real desktop
+// layout - scrollable/zoomable, same idea as "Request Desktop Site".
+const MOBILE_LAYOUT_BREAKPOINT = 820;
+
+function isMobileLayout() {
+    return document.body.classList.contains('mobile-layout-active');
+}
+
+function getForceDesktopView() {
+    try { return localStorage.getItem('synappz_force_desktop') === 'true'; } catch (e) { return false; }
+}
+
+function updateLayoutMode() {
+    const narrow = window.innerWidth <= MOBILE_LAYOUT_BREAKPOINT;
+    const forced = getForceDesktopView();
+    const wasMobile = isMobileLayout();
+    document.body.classList.toggle('narrow-viewport', narrow);
+    document.body.classList.toggle('mobile-layout-active', narrow && !forced);
+    if (isMobileLayout() === wasMobile) return; // nothing to re-render
+
+    // Tasks and Projects have a dedicated simple layout for mobile, built as
+    // real DOM (not just CSS), so switching modes needs an actual re-render.
+    const page = localStorage.getItem('synaapz_current_page');
+    if (page === 'nav-tasks' && document.getElementById('tasks-table-container')) renderTasksTable();
+    if (page === 'nav-projects' && document.getElementById('projects-kanban-container')) renderProjectsKanban();
+}
+
+function switchToDesktopView() {
+    try { localStorage.setItem('synappz_force_desktop', 'true'); } catch (e) { /* ignore */ }
+    closeMobileNav();
+    updateLayoutMode();
+}
+function switchToMobileView() {
+    try { localStorage.setItem('synappz_force_desktop', 'false'); } catch (e) { /* ignore */ }
+    updateLayoutMode();
+}
+window.switchToDesktopView = switchToDesktopView;
+window.switchToMobileView = switchToMobileView;
+
+let _layoutResizeTimer = null;
+window.addEventListener('resize', () => {
+    clearTimeout(_layoutResizeTimer);
+    _layoutResizeTimer = setTimeout(updateLayoutMode, 150);
+});
+document.addEventListener('DOMContentLoaded', updateLayoutMode);
+
+// ========================================================================
 //        MOBILE NAVIGATION (slide-out sidebar under ~820px wide)
 // ========================================================================
 function toggleMobileNav() {
@@ -13860,6 +13926,240 @@ let focusActiveFilters = {};
 
 // ========================================================================
 //                          ROUTINES PAGE
+// ========================================================================
+//     SIMPLE MOBILE VIEWS (Tasks + Projects)
+// ========================================================================
+// On a narrow screen, Tasks and Projects swap their full desktop layout
+// (data table / two-panel kanban board) for a plain, tappable list - same
+// idea as the Routines page. Nothing is deleted; switching to Desktop View
+// (link in the mobile menu) brings back every feature.
+
+let tasksMobileFilters = { search: '', status: '' };
+let projectsMobileDrillId = null; // null = project list; else a prj_id / 'all' / 'unassigned'
+
+function simpleTaskDueBadge(dateStr, isDone) {
+    if (!dateStr) return null;
+    const days = daysUntil(dateStr);
+    if (isDone) return { label: 'Done', bg: 'var(--bg-e8f5e9)', color: '#1b5e20' };
+    if (days < 0) return { label: `Overdue ${Math.abs(days)}d`, bg: 'var(--bg-fee2e2)', color: '#dc3545' };
+    if (days === 0) return { label: 'Due today', bg: '#fff3cd', color: '#8a6404' };
+    return { label: 'Due ' + new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), bg: 'var(--bg-f1f3f5)', color: 'var(--fg-495057)' };
+}
+
+/**
+ * One tappable row for a task: checkbox to mark Done/To Do, name, project +
+ * task-group tags, status colour, due badge, and an edit shortcut.
+ */
+function simpleTaskRowHtml(t) {
+    const isDone = (t.status_name || '').toLowerCase() === 'done';
+    const projectName = t.project_id ? (((lookupData.projects || []).find(p => p.prj_id === t.project_id) || {}).name || '') : '';
+    const badge = simpleTaskDueBadge(t.due_date, isDone);
+    const statusColor = getStatusColor(t.status_name);
+    return `
+        <div class="routine-row" data-task-id="${t.id}" style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 12px; border-bottom: 1px solid var(--bd-e9ecef); border-left: 3px solid ${statusColor};">
+            <div style="display: flex; align-items: center; gap: 12px; flex: 1 1 140px; min-width: 0;">
+                <input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleSimpleTaskDone(${t.id}, this)" title="Mark ${isDone ? 'not done' : 'done'}" style="width: 18px; height: 18px; cursor: pointer; flex-shrink: 0;">
+                <span onclick="openEditTaskModalById(${t.id})" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; ${isDone ? 'text-decoration: line-through; color: var(--fg-6c757d);' : ''}" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; margin-left: 30px;">
+                ${projectName || t.task_group ? `<div class="kanban-card-tags">
+                    ${projectName ? `<span class="kanban-tag kanban-tag-project"><i class="fa-solid fa-diagram-project"></i><span>${escapeHtml(projectName)}</span></span>` : ''}
+                    ${t.task_group ? `<span class="kanban-tag kanban-tag-group"><i class="fa-solid fa-tag"></i><span>${escapeHtml(t.task_group)}</span></span>` : ''}
+                </div>` : ''}
+                ${badge ? `<span style="font-size: 0.78em; font-weight: 600; padding: 3px 10px; border-radius: 12px; background: ${badge.bg}; color: ${badge.color}; white-space: nowrap;">${badge.label}</span>` : ''}
+                <button onclick="openEditTaskModalById(${t.id})" title="Edit" style="background: none; border: none; color: var(--fg-6c757d); cursor: pointer; padding: 6px; flex-shrink: 0;">
+                    <i class="fa-solid fa-pen"></i>
+                </button>
+            </div>
+        </div>`;
+}
+
+async function toggleSimpleTaskDone(taskId, checkboxEl) {
+    const task = (allTasks || []).find(t => t.id === taskId);
+    if (!task) return;
+    const newStatus = checkboxEl.checked ? 'Done' : 'To Do';
+    checkboxEl.disabled = true;
+    try {
+        const res = await fetch(`/api/tasks/${taskId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status_name: newStatus })
+        });
+        if (!res.ok) throw new Error('Save failed');
+        task.status_name = newStatus;
+        showNotification(newStatus === 'Done' ? 'Task marked done' : 'Task reopened', 'success');
+    } catch (err) {
+        showNotification('Could not update task', 'error');
+        checkboxEl.checked = !checkboxEl.checked;
+    }
+    checkboxEl.disabled = false;
+    const page = localStorage.getItem('synaapz_current_page');
+    if (page === 'nav-tasks') renderTasksTable();
+    if (page === 'nav-projects') renderProjectsKanban();
+}
+window.toggleSimpleTaskDone = toggleSimpleTaskDone;
+
+/**
+ * Renders a simple, grouped-by-status task list into `container` from the
+ * given `tasks` array. Shared by the Tasks page and the Projects drill-down.
+ * `toolbarHtml` is prepended above the groups (search/filter/back links etc).
+ */
+function renderSimpleTaskGroups(container, tasks, toolbarHtml, emptyMessage) {
+    const statuses = orderStatusesDoneLast(lookupData.lkp_status || []);
+    let html = toolbarHtml;
+    if (tasks.length === 0) {
+        html += `<p style="text-align: center; color: var(--fg-6c757d); padding: 40px 20px;">${emptyMessage}</p>`;
+        container.innerHTML = html;
+        return;
+    }
+    let shown = 0;
+    statuses.forEach(s => {
+        const rows = tasks.filter(t => (t.status_name || '') === s.name);
+        if (rows.length === 0) return;
+        shown += rows.length;
+        rows.sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999'));
+        html += `
+            <div style="margin-bottom: 16px;">
+                <p style="font-size: 0.85em; font-weight: 600; color: var(--fg-495057); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px;">${escapeHtml(s.name)} (${rows.length})</p>
+                <div style="background: var(--bg-fff); border: 1px solid var(--bd-dee2e6); border-radius: 8px; overflow: hidden;">${rows.map(simpleTaskRowHtml).join('')}</div>
+            </div>`;
+    });
+    // Tasks with a status not in lkp_status (edge case) still show up
+    const known = new Set(statuses.map(s => s.name));
+    const leftover = tasks.filter(t => !known.has(t.status_name || ''));
+    if (leftover.length) {
+        html += `<div style="background: var(--bg-fff); border: 1px solid var(--bd-dee2e6); border-radius: 8px; overflow: hidden; margin-bottom: 16px;">${leftover.map(simpleTaskRowHtml).join('')}</div>`;
+    }
+    if (shown === 0 && leftover.length === 0) {
+        html += `<p style="text-align: center; color: var(--fg-6c757d); padding: 40px 20px;">No tasks match</p>`;
+    }
+    container.innerHTML = html;
+}
+
+function tasksMobileToolbarHtml(backLink) {
+    const projects = probRealProjects();
+    return `
+        ${backLink || ''}
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px;">
+            <button onclick="openAddTaskModal()" style="padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
+                <i class="fa-solid fa-plus"></i> Add Task
+            </button>
+            <input type="text" placeholder="Search tasks..." value="${escapeHtml(tasksMobileFilters.search)}"
+                   oninput="tasksMobileFilters.search = this.value; renderTasksTable();"
+                   style="flex: 1; min-width: 140px; padding: 8px 12px; border: 1px solid var(--bd-ced4da); border-radius: 6px;">
+            <select onchange="tasksMobileFilters.status = this.value; renderTasksTable();" style="padding: 8px; border: 1px solid var(--bd-ced4da); border-radius: 6px; background: var(--bg-fff); color: var(--fg-212529);">
+                <option value="">All Statuses</option>
+                ${(lookupData.lkp_status || []).map(s => `<option value="${escapeHtml(s.name)}" ${tasksMobileFilters.status === s.name ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}
+            </select>
+        </div>`;
+}
+
+function renderTasksMobileSimple(container, activeTasks) {
+    const term = tasksMobileFilters.search.toLowerCase();
+    const filtered = activeTasks.filter(t =>
+        (!term || t.title.toLowerCase().includes(term)) &&
+        (!tasksMobileFilters.status || t.status_name === tasksMobileFilters.status)
+    );
+    renderSimpleTaskGroups(container, filtered, tasksMobileToolbarHtml(), 'No tasks yet - tap "Add Task" to create one.');
+}
+
+// ------------------------------------------------------------------------
+//                          PROJECTS - simple mobile view
+// ------------------------------------------------------------------------
+
+function projectsMobileTaskCounts(prjId) {
+    const tasks = (allTasks || []).filter(t => t.is_archived !== 1 && !t.is_deleted &&
+        (prjId === 'all' ? true : prjId === 'unassigned' ? !t.project_id : t.project_id === prjId));
+    return { open: tasks.filter(t => (t.status_name || '').toLowerCase() !== 'done').length, total: tasks.length };
+}
+
+function renderProjectsMobileList(container) {
+    const term = (document.getElementById('projects-mobile-search')?.value || '').toLowerCase();
+    const groups = groupsForScope('project');
+    const projects = (lookupData.projects || []).filter(p => !isProblemProject(p));
+
+    const row = (id, icon, name, iconColor) => {
+        const c = projectsMobileTaskCounts(id);
+        return `
+            <div onclick="projectsMobileDrillId='${id}'; renderProjectsKanban();"
+                 style="display: flex; align-items: center; gap: 10px; padding: 12px; margin-bottom: 6px; border-radius: 6px; cursor: pointer; background: var(--bg-fff); border: 1px solid var(--bd-dee2e6);">
+                <i class="fa-solid ${icon}" style="color: ${iconColor || '#007bff'}; width: 18px; flex-shrink: 0;"></i>
+                <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;">${escapeHtml(name)}</span>
+                <span style="font-size: 0.8em; color: var(--fg-6c757d); flex-shrink: 0;">${c.open}/${c.total}</span>
+                <i class="fa-solid fa-chevron-right" style="color: var(--fg-ced4da); font-size: 0.85em; flex-shrink: 0;"></i>
+            </div>`;
+    };
+
+    let html = `
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px;">
+            <button onclick="openCreateProjectModal()" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
+                <i class="fa-solid fa-plus"></i> Create Project
+            </button>
+            <input type="text" id="projects-mobile-search" placeholder="Search projects..." value="${term}"
+                   oninput="renderProjectsMobileList(document.getElementById('projects-kanban-container'))"
+                   style="flex: 1; min-width: 140px; padding: 8px 12px; border: 1px solid var(--bd-ced4da); border-radius: 6px;">
+        </div>`;
+
+    if (!term) {
+        html += row('all', 'fa-diagram-project', 'All Projects');
+        html += row('unassigned', 'fa-inbox', 'Unassigned', '#6c757d');
+    }
+
+    const matches = p => !term || p.name.toLowerCase().includes(term);
+    if (groups.length === 0) {
+        html += projects.filter(matches).map(p => row(p.prj_id, 'fa-diagram-project', p.name)).join('');
+    } else {
+        groups.forEach(g => {
+            const members = projects.filter(p => p.group_id === g.group_id).filter(matches);
+            if (term && members.length === 0 && !g.name.toLowerCase().includes(term)) return;
+            const shown = term && !g.name.toLowerCase().includes(term) ? members : projects.filter(p => p.group_id === g.group_id);
+            if (shown.length === 0 && term) return;
+            html += `<p style="font-size: 0.85em; font-weight: 600; color: var(--fg-495057); text-transform: uppercase; letter-spacing: 0.5px; margin: 14px 0 8px;">${escapeHtml(g.name)}</p>`;
+            html += shown.map(p => row(p.prj_id, 'fa-diagram-project', p.name)).join('');
+        });
+        const ungrouped = projects.filter(p => !p.group_id).filter(matches);
+        if (ungrouped.length) {
+            html += `<p style="font-size: 0.85em; font-weight: 600; color: var(--fg-495057); text-transform: uppercase; letter-spacing: 0.5px; margin: 14px 0 8px;">Ungrouped</p>`;
+            html += ungrouped.map(p => row(p.prj_id, 'fa-diagram-project', p.name)).join('');
+        }
+    }
+    container.innerHTML = html;
+}
+window.renderProjectsMobileList = renderProjectsMobileList;
+
+function renderProjectsMobileDrill(container) {
+    const id = projectsMobileDrillId;
+    const project = id !== 'all' && id !== 'unassigned' ? (lookupData.projects || []).find(p => p.prj_id === id) : null;
+    if (id !== 'all' && id !== 'unassigned' && !project) { projectsMobileDrillId = null; renderProjectsMobileList(container); return; }
+    const name = project ? project.name : (id === 'all' ? 'All Projects' : 'Unassigned');
+
+    const tasks = (allTasks || []).filter(t => t.is_archived !== 1 && !t.is_deleted &&
+        (id === 'all' ? true : id === 'unassigned' ? !t.project_id : t.project_id === id));
+    const term = tasksMobileFilters.search.toLowerCase();
+    const filtered = tasks.filter(t =>
+        (!term || t.title.toLowerCase().includes(term)) &&
+        (!tasksMobileFilters.status || t.status_name === tasksMobileFilters.status)
+    );
+
+    const backLink = `
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+            <a href="#" onclick="projectsMobileDrillId=null; tasksMobileFilters={search:'',status:''}; renderProjectsKanban(); return false;" style="color: #007bff; text-decoration: none; font-size: 0.9em;">
+                <i class="fa-solid fa-chevron-left"></i> All Projects
+            </a>
+            ${project ? `<button onclick="openMoveProjectToGroupModal('${project.prj_id}')" title="Move to group" style="background: none; border: none; color: var(--fg-6c757d); cursor: pointer; padding: 4px;"><i class="fa-solid fa-folder-tree"></i></button>` : ''}
+        </div>
+        <h2 style="margin: 0 0 12px; font-size: 1.3em;">${escapeHtml(name)}</h2>`;
+
+    const toolbar = tasksMobileToolbarHtml(backLink);
+    // Pre-fill the project on "Add Task" when drilled into a specific project
+    const toolbarWithProject = project
+        ? toolbar.replace("onclick=\"openAddTaskModal()\"", `onclick="openAddTaskModal(); setTimeout(()=>{const s=document.getElementById('task-project_id'); if(s) s.value='${project.prj_id}';}, 60)"`)
+        : toolbar;
+
+    renderSimpleTaskGroups(container, filtered, toolbarWithProject, 'No tasks in this project yet.');
+}
+
+
 // ========================================================================
 // A "routine" is an ordinary task with a Recurrence set - nothing is stored
 // separately, so routines keep showing up in All Tasks, their Project board,

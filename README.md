@@ -1,4 +1,4 @@
-# SynAppz v35
+# SynAppz v36
 
 Run:
     pip install -r requirements.txt
@@ -132,3 +132,28 @@ The content area was missing `min-width: 0`, a standard flexbox fix. Without it,
 (e.g. Tasks with many columns enabled) could drag the *entire page* - sidebar included - into
 horizontal scroll instead of scrolling within its own box. This is fixed for every screen size,
 not just mobile; nothing changes visually at a normal desktop width.
+
+## Mobile: simple views for Tasks and Projects
+Rather than squeezing the full desktop board/table into a phone screen, Tasks and Projects now
+have a dedicated simple view on narrow screens - the same idea as the Routines page:
+
+- **Tasks**: a plain list grouped by status (To Do, In Progress, etc.), each row with a checkbox
+  (ticks the task to Done / back to To Do), its Project and Task Group tags, and a due-date badge.
+  Tap the name (or the pencil) to open the full Edit Task window. Search and a status filter sit
+  in the toolbar; everything else (bulk actions, column customization, kanban toggle, extra
+  filters) is left for Desktop View.
+- **Projects**: a tappable list of projects (grouped, with open/total task counts). Tapping a
+  project drills into the same simple task list, filtered to that project, with "+ Add Task"
+  pre-filling the project. A back link returns to the project list.
+
+## Switch to Desktop View
+Some things are only available in the full desktop layout (kanban boards, bulk actions, extra
+filters, column customization). On a narrow screen, "Switch to Desktop View" in the menu turns
+off every mobile adaptation, so the phone shows the real desktop layout at full size - scrollable
+sideways, same idea as "Request Desktop Site" in a browser. A "Mobile View" button then sits in
+the bottom-right corner to switch back. The choice is remembered (localStorage) until you switch
+back or clear it.
+
+Everything from the previous mobile pass (slide-out menu, Problems' stacked layout, Kanban-style
+boards scrolling as wide columns, Calendar's fixed header) still applies on top of this - Tasks
+and Projects are the two pages that now get a purpose-built simple view instead.

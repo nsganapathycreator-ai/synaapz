@@ -17,6 +17,9 @@
 
     <!-- Main Container for the entire application layout -->
     <div id="mobile-nav-overlay" onclick="closeMobileNav()"></div>
+    <button id="switch-mobile-view-pill" onclick="switchToMobileView()" title="Switch back to the simplified mobile view">
+        <i class="fa-solid fa-mobile-screen-button"></i> Mobile View
+    </button>
     <div id="app-container">
 
     <script src="{{ url_for('static', filename='markdown_utils.js') }}"></script>
@@ -101,6 +104,10 @@
                 <span id="nav-toggle-text">Hide Text</span>
             </button>
             <!-- Bottom fixed item: Settings -->
+            <a href="#" class="nav-item" id="switch-desktop-view-link" onclick="switchToDesktopView(); return false;" title="Show the full desktop layout on this screen">
+                <i class="fa-solid fa-desktop"></i>
+                <span>Switch to Desktop View</span>
+            </a>
             <a href="#" class="nav-item nav-settings" id="nav-settings">
                 <i class="fa-solid fa-gear"></i>
                 <span>Settings</span>
