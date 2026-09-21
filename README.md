@@ -1,4 +1,4 @@
-# SynAppz v36
+# SynAppz v37
 
 Run:
     pip install -r requirements.txt
@@ -157,3 +157,21 @@ back or clear it.
 Everything from the previous mobile pass (slide-out menu, Problems' stacked layout, Kanban-style
 boards scrolling as wide columns, Calendar's fixed header) still applies on top of this - Tasks
 and Projects are the two pages that now get a purpose-built simple view instead.
+
+## Mobile: Home page and Focus Board simple views
+- **Home**: Overdue Tasks and Reminders now show first, full width and readable (they used to be
+  squeezed into a 4-column grid). Below them, a "Jump to" button grid goes straight to any visible
+  page. Recently Modified Tasks and Active Projects are tucked behind a collapsible - closed by
+  default, one tap to open.
+- **Focus Board**: now uses the same plain-list treatment as Tasks/Routines (grouped by Today /
+  Previous days / Future days) instead of squeezing status columns into an unreadable grid.
+  Desktop Focus Board is unchanged.
+
+## Task Group and Project filters
+- **Tasks (desktop)**: Task Group is now a filter option, alongside the existing Task Project
+  filter (Settings > Customize Task Table > Task Group > Add Filter). Existing databases get this
+  turned on once automatically; turning it back off in Settings sticks.
+- **Tasks (mobile)**: added Project and Task Group filters next to the existing Status filter and
+  search box.
+- **Projects (mobile) drill-down**: added a Task Group filter for that project's task list
+  (Project filter is hidden there since you're already inside one project).

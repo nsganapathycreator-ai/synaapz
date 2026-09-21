@@ -256,7 +256,7 @@ INITIAL_COLUMN_SETTINGS = [
     ('file', 'File', 'text', 1, 1, 0, 0, 6),
     
     # Task Category
-    ('task_group', 'Task Group', 'text', 1, 1, 0, 0, 7),
+    ('task_group', 'Task Group', 'text', 1, 1, 0, 1, 7),
     ('project_id', 'Task Project', 'lookup_projects', 1, 1, 0, 1, 8),
     ('subcategory_id', 'Sub-Category', 'lookup_subcategories', 1, 1, 0, 1, 9),
     ('category_id', 'Category', 'lookup_categories', 0, 1, 0, 1, 10),
@@ -295,6 +295,21 @@ def _slug(text):
     while '--' in base:
         base = base.replace('--', '-')
     return base.strip('-') or 'group'
+
+
+def enable_task_group_filter_once(cursor):
+    """
+    One-time (v37): turn on the "Task Group" filter dropdown on the Tasks page,
+    matching Task Project which was already filterable. Runs once, so if
+    someone later turns it back off in Settings, it stays off.
+    """
+    marker = 'task_group_filter_enabled_v37'
+    cursor.execute("SELECT 1 FROM user_preferences WHERE preference_key = ?", (marker,))
+    if cursor.fetchone():
+        return
+    cursor.execute("UPDATE column_settings SET is_filterable = 1 WHERE column_name = 'task_group'")
+    cursor.execute("INSERT INTO user_preferences (user_id, preference_key, preference_value) VALUES ('default', ?, 'done')", (marker,))
+    print("✅ Enabled the Task Group filter on the Tasks page")
 
 
 def move_done_status_last_once(cursor):
@@ -610,6 +625,7 @@ def init_db():
         insert_data_if_empty('lkp_priority', INITIAL_PRIORITY, ['name', 'sort_order'])
         seed_default_stages_once(cursor)
         move_done_status_last_once(cursor)
+        enable_task_group_filter_once(cursor)
         insert_data_if_empty('lkp_stage', INITIAL_STAGE, ['name', 'sort_order', 'color'])
         insert_data_if_empty('lkp_environment', INITIAL_ENVIRONMENT, ['name', 'status'])
         insert_data_if_empty('categories', INITIAL_CATEGORIES, ['cat_id', 'name', 'status'])

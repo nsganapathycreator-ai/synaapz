@@ -1,6 +1,6 @@
-// app.js - SynAppz v36 (simple mobile views for Tasks/Projects + Desktop View toggle)
+// app.js - SynAppz v37 (mobile: Home + Focus Board simple views, Task Group filters)
 
-console.log('🚀 SynAppz v36 loaded');
+console.log('🚀 SynAppz v37 loaded');
 
 // Theme (light/dark) is applied before first paint by an inline script in index.html,
 // then synced with the saved preference - see THEME section below.
@@ -5118,39 +5118,25 @@ function renderHomePage() {
     // Get overdue tasks
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    console.log('[Overdue] Today:', today.toISOString());
     
     const overdueTasks = allTasks.filter(t => {
         if (!t.due_date || t.is_archived === 1 || t.status_name === 'Done') return false;
         const dueDate = new Date(t.due_date);
-        const isOverdue = dueDate < today;
-        
-        // Debug first few tasks
-        if (allTasks.indexOf(t) < 5) {
-            console.log(`[Overdue] Task "${t.title}": due_date=${t.due_date}, parsed=${dueDate.toISOString()}, isOverdue=${isOverdue}, status=${t.status_name}, archived=${t.is_archived}`);
-        }
-        
-        return isOverdue;
+        return dueDate < today;
     }).sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
-    
-    console.log('[Overdue] Found', overdueTasks.length, 'overdue tasks');
     
     // Get reminder tasks
     const reminderTasks = allTasks.filter(t => {
         if (!t.reminder_date || t.is_archived === 1 || t.status_name === 'Done') return false;
         const reminderDate = new Date(t.reminder_date);
         reminderDate.setHours(0, 0, 0, 0);
-        const isReminder = reminderDate <= today;
-        
-        // Debug first few tasks with reminder_date
-        if (t.reminder_date && allTasks.filter(x => x.reminder_date).indexOf(t) < 3) {
-            console.log(`[Reminders] Task "${t.title}": reminder_date=${t.reminder_date}, parsed=${reminderDate.toISOString()}, isReminder=${isReminder}, status=${t.status_name}, archived=${t.is_archived}`);
-        }
-        
-        return isReminder;
+        return reminderDate <= today;
     }).sort((a, b) => new Date(a.reminder_date) - new Date(b.reminder_date));
     
-    console.log('[Reminders] Found', reminderTasks.length, 'reminder tasks out of', allTasks.filter(t => t.reminder_date).length, 'tasks with reminder dates');
+    if (isMobileLayout()) {
+        renderHomeMobileSimple(container, { recentTasks, recentProjects, overdueTasks, reminderTasks });
+        return;
+    }
     
     let html = `
         <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 15px; height: calc(100vh - 120px); width: 100%; max-width: 100%; box-sizing: border-box;">
@@ -5241,7 +5227,12 @@ function navigateToProject(projectId) {
     renderPage('nav-projects');
     // Then select the specific project (slight delay to ensure page is rendered)
     setTimeout(() => {
-        selectProject(projectId);
+        if (isMobileLayout()) {
+            projectsMobileDrillId = projectId;
+            renderProjectsKanban();
+        } else {
+            selectProject(projectId);
+        }
     }, 50);
 }
 window.navigateToProject = navigateToProject;
@@ -13934,7 +13925,7 @@ let focusActiveFilters = {};
 // idea as the Routines page. Nothing is deleted; switching to Desktop View
 // (link in the mobile menu) brings back every feature.
 
-let tasksMobileFilters = { search: '', status: '' };
+let tasksMobileFilters = { search: '', status: '', task_group: '', project: '' };
 let projectsMobileDrillId = null; // null = project list; else a prj_id / 'all' / 'unassigned'
 
 function simpleTaskDueBadge(dateStr, isDone) {
@@ -13959,7 +13950,7 @@ function simpleTaskRowHtml(t) {
         <div class="routine-row" data-task-id="${t.id}" style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 12px; border-bottom: 1px solid var(--bd-e9ecef); border-left: 3px solid ${statusColor};">
             <div style="display: flex; align-items: center; gap: 12px; flex: 1 1 140px; min-width: 0;">
                 <input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleSimpleTaskDone(${t.id}, this)" title="Mark ${isDone ? 'not done' : 'done'}" style="width: 18px; height: 18px; cursor: pointer; flex-shrink: 0;">
-                <span onclick="openEditTaskModalById(${t.id})" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; ${isDone ? 'text-decoration: line-through; color: var(--fg-6c757d);' : ''}" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</span>
+                <span class="routine-row-title" onclick="openEditTaskModalById(${t.id})" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; ${isDone ? 'text-decoration: line-through; color: var(--fg-6c757d);' : ''}" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; margin-left: 30px;">
                 ${projectName || t.task_group ? `<div class="kanban-card-tags">
@@ -14036,7 +14027,11 @@ function renderSimpleTaskGroups(container, tasks, toolbarHtml, emptyMessage) {
     container.innerHTML = html;
 }
 
-function tasksMobileToolbarHtml(backLink) {
+function tasksMobileTaskGroupOptions() {
+    return [...new Set((allTasks || []).map(t => t.task_group).filter(g => g && String(g).trim()))].sort((a, b) => a.localeCompare(b));
+}
+
+function tasksMobileToolbarHtml(backLink, showProjectFilter = true, rerenderFn = 'renderTasksTable') {
     const projects = probRealProjects();
     return `
         ${backLink || ''}
@@ -14045,20 +14040,106 @@ function tasksMobileToolbarHtml(backLink) {
                 <i class="fa-solid fa-plus"></i> Add Task
             </button>
             <input type="text" placeholder="Search tasks..." value="${escapeHtml(tasksMobileFilters.search)}"
-                   oninput="tasksMobileFilters.search = this.value; renderTasksTable();"
+                   oninput="tasksMobileFilters.search = this.value; ${rerenderFn}();"
                    style="flex: 1; min-width: 140px; padding: 8px 12px; border: 1px solid var(--bd-ced4da); border-radius: 6px;">
-            <select onchange="tasksMobileFilters.status = this.value; renderTasksTable();" style="padding: 8px; border: 1px solid var(--bd-ced4da); border-radius: 6px; background: var(--bg-fff); color: var(--fg-212529);">
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px;">
+            <select onchange="tasksMobileFilters.status = this.value; ${rerenderFn}();" style="padding: 8px; border: 1px solid var(--bd-ced4da); border-radius: 6px; background: var(--bg-fff); color: var(--fg-212529);">
                 <option value="">All Statuses</option>
                 ${(lookupData.lkp_status || []).map(s => `<option value="${escapeHtml(s.name)}" ${tasksMobileFilters.status === s.name ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}
             </select>
+            ${showProjectFilter ? `<select onchange="tasksMobileFilters.project = this.value; ${rerenderFn}();" style="padding: 8px; border: 1px solid var(--bd-ced4da); border-radius: 6px; background: var(--bg-fff); color: var(--fg-212529);">
+                <option value="">All Projects</option>
+                ${projects.map(p => `<option value="${p.prj_id}" ${tasksMobileFilters.project === p.prj_id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
+            </select>` : ''}
+            <select onchange="tasksMobileFilters.task_group = this.value; ${rerenderFn}();" style="padding: 8px; border: 1px solid var(--bd-ced4da); border-radius: 6px; background: var(--bg-fff); color: var(--fg-212529);">
+                <option value="">All Task Groups</option>
+                ${tasksMobileTaskGroupOptions().map(g => `<option value="${escapeHtml(g)}" ${tasksMobileFilters.task_group === g ? 'selected' : ''}>${escapeHtml(g)}</option>`).join('')}
+            </select>
         </div>`;
 }
+
+// ------------------------------------------------------------------------
+//                          HOME - simple mobile view
+// ------------------------------------------------------------------------
+// Reminders and Overdue first (what needs attention right now), quick
+// buttons to jump anywhere in the app, and the "browsing" widgets (Recently
+// Modified Tasks, Active Projects) tucked behind a collapsible so they don't
+// push the useful stuff off-screen.
+
+function homeQuickLinksHtml() {
+    const items = [...document.querySelectorAll('#nav-links .nav-item')]
+        .filter(el => el.id && el.id !== 'nav-home' && getComputedStyle(el).display !== 'none');
+    if (items.length === 0) return '';
+    return `
+        <p style="font-size: 0.85em; font-weight: 600; color: var(--fg-495057); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px;">Jump to</p>
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; margin-bottom: 20px;">
+            ${items.map(el => {
+                const icon = el.querySelector('i')?.className || 'fa-solid fa-circle';
+                const label = (el.querySelector('span')?.textContent || el.id).trim();
+                return `
+                    <button onclick="renderPage('${el.id}')" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; background: var(--bg-fff); border: 1px solid var(--bd-dee2e6); border-radius: 10px; cursor: pointer; color: var(--fg-212529);">
+                        <i class="${icon}" style="font-size: 1.2em; color: #007bff;"></i>
+                        <span style="font-size: 0.76em; text-align: center; line-height: 1.2;">${escapeHtml(label)}</span>
+                    </button>`;
+            }).join('')}
+        </div>`;
+}
+
+function renderHomeMobileSimple(container, { recentTasks, recentProjects, overdueTasks, reminderTasks }) {
+    const attentionCard = (title, icon, color, tasks, dateField, emptyText) => `
+        <div style="background: var(--bg-fff); border-radius: 8px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); min-width: 0;">
+            <h3 style="margin: 0 0 10px; font-size: 0.95em; color: ${color};"><i class="fa-solid ${icon}"></i> ${title}</h3>
+            ${tasks.length === 0
+                ? `<p style="color: ${dateField === 'due_date' ? '#28a745' : 'var(--fg-6c757d)'}; font-size: 0.85em; margin: 0;"><i class="fa-solid fa-check-circle"></i> ${emptyText}</p>`
+                : tasks.map(t => `
+                    <div onclick="openEditTaskModalById(${t.id})" style="padding: 8px 10px; margin-bottom: 8px; border-left: 3px solid ${color}; background: var(--bg-f8f9fa); border-radius: 4px; cursor: pointer;">
+                        <div style="font-weight: 600; font-size: 0.85em; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(t.title)}</div>
+                        <div style="font-size: 0.72em; color: var(--fg-6c757d);">${new Date(t[dateField]).toLocaleDateString()}</div>
+                    </div>`).join('')
+            }
+        </div>`;
+
+    let html = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px;">
+            ${attentionCard('Overdue Tasks', 'fa-bell', '#dc3545', overdueTasks, 'due_date', 'No overdue tasks!')}
+            ${attentionCard('Reminders', 'fa-clock', '#ff9800', reminderTasks, 'reminder_date', 'No reminders!')}
+        </div>
+        ${homeQuickLinksHtml()}
+        <details style="border: 1px solid var(--bd-dee2e6); border-radius: 8px; background: var(--bg-fff);">
+            <summary style="padding: 12px 16px; cursor: pointer; font-weight: 600; color: var(--fg-495057); user-select: none; list-style: none; display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-chevron-right task-form-more-icon" style="transition: transform 0.2s; font-size: 0.85em;"></i>
+                Recently Modified Tasks & Active Projects
+            </summary>
+            <div style="padding: 4px 16px 16px;">
+                <h4 style="margin: 10px 0 8px; font-size: 0.85em; color: var(--fg-495057); text-transform: uppercase;">Recently Modified Tasks</h4>
+                ${recentTasks.length === 0 ? '<p style="color: var(--fg-6c757d); font-size: 0.85em;">No tasks yet</p>' : recentTasks.map(task => `
+                    <div onclick="openEditTaskModalById(${task.id})" style="padding: 10px; margin-bottom: 8px; border-left: 3px solid #007bff; background: var(--bg-f8f9fa); border-radius: 4px; cursor: pointer;">
+                        <div style="font-weight: 600; font-size: 0.9em; margin-bottom: 4px;">${escapeHtml(task.title)}</div>
+                        <div style="font-size: 0.78em; color: var(--fg-6c757d);">
+                            <span style="background: ${getStatusColor(task.status_name)}; color: white; padding: 2px 8px; border-radius: 3px; margin-right: 6px;">${escapeHtml(task.status_name)}</span>
+                            ${task.due_date ? new Date(task.due_date).toLocaleDateString() : ''}
+                        </div>
+                    </div>`).join('')}
+                <h4 style="margin: 16px 0 8px; font-size: 0.85em; color: var(--fg-495057); text-transform: uppercase;">Active Projects</h4>
+                ${recentProjects.length === 0 ? '<p style="color: var(--fg-6c757d); font-size: 0.85em;">No projects yet</p>' : recentProjects.map(project => `
+                    <div onclick="navigateToProject('${project.prj_id}')" style="padding: 10px; margin-bottom: 8px; border-left: 3px solid #28a745; background: var(--bg-f8f9fa); border-radius: 4px; cursor: pointer;">
+                        <div style="font-weight: 600; font-size: 0.9em; margin-bottom: 4px;">${escapeHtml(project.name)}</div>
+                        <div style="font-size: 0.78em; color: var(--fg-6c757d);">${project.taskCount} tasks - Last activity: ${new Date(project.lastModified).toLocaleDateString()}</div>
+                    </div>`).join('')}
+            </div>
+        </details>`;
+    container.innerHTML = html;
+}
+
 
 function renderTasksMobileSimple(container, activeTasks) {
     const term = tasksMobileFilters.search.toLowerCase();
     const filtered = activeTasks.filter(t =>
         (!term || t.title.toLowerCase().includes(term)) &&
-        (!tasksMobileFilters.status || t.status_name === tasksMobileFilters.status)
+        (!tasksMobileFilters.status || t.status_name === tasksMobileFilters.status) &&
+        (!tasksMobileFilters.project || t.project_id === tasksMobileFilters.project) &&
+        (!tasksMobileFilters.task_group || t.task_group === tasksMobileFilters.task_group)
     );
     renderSimpleTaskGroups(container, filtered, tasksMobileToolbarHtml(), 'No tasks yet - tap "Add Task" to create one.');
 }
@@ -14138,19 +14219,20 @@ function renderProjectsMobileDrill(container) {
     const term = tasksMobileFilters.search.toLowerCase();
     const filtered = tasks.filter(t =>
         (!term || t.title.toLowerCase().includes(term)) &&
-        (!tasksMobileFilters.status || t.status_name === tasksMobileFilters.status)
+        (!tasksMobileFilters.status || t.status_name === tasksMobileFilters.status) &&
+        (!tasksMobileFilters.task_group || t.task_group === tasksMobileFilters.task_group)
     );
 
     const backLink = `
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-            <a href="#" onclick="projectsMobileDrillId=null; tasksMobileFilters={search:'',status:''}; renderProjectsKanban(); return false;" style="color: #007bff; text-decoration: none; font-size: 0.9em;">
+            <a href="#" onclick="projectsMobileDrillId=null; tasksMobileFilters={search:'',status:'',task_group:'',project:''}; renderProjectsKanban(); return false;" style="color: #007bff; text-decoration: none; font-size: 0.9em;">
                 <i class="fa-solid fa-chevron-left"></i> All Projects
             </a>
             ${project ? `<button onclick="openMoveProjectToGroupModal('${project.prj_id}')" title="Move to group" style="background: none; border: none; color: var(--fg-6c757d); cursor: pointer; padding: 4px;"><i class="fa-solid fa-folder-tree"></i></button>` : ''}
         </div>
         <h2 style="margin: 0 0 12px; font-size: 1.3em;">${escapeHtml(name)}</h2>`;
 
-    const toolbar = tasksMobileToolbarHtml(backLink);
+    const toolbar = tasksMobileToolbarHtml(backLink, false, 'renderProjectsKanban'); // project filter hidden - already scoped to this project
     // Pre-fill the project on "Add Task" when drilled into a specific project
     const toolbarWithProject = project
         ? toolbar.replace("onclick=\"openAddTaskModal()\"", `onclick="openAddTaskModal(); setTimeout(()=>{const s=document.getElementById('task-project_id'); if(s) s.value='${project.prj_id}';}, 60)"`)
@@ -14490,7 +14572,57 @@ function applyFocusFilters(tasks) {
     return result;
 }
 
+/**
+ * Focus Board - simple mobile view. Same idea as Tasks: a plain list of rows
+ * (reusing simpleTaskRowHtml) grouped by Today / Previous / Future instead of
+ * the status-column grid, which doesn't fit a phone screen.
+ */
+function renderFocusBoardMobileSimple(container, focusTasks) {
+    const today = new Date().toISOString().slice(0, 10);
+    const allFiltered = applyFocusFilters(focusTasks);
+    const pastTasks = allFiltered.filter(t => t.focus_date < today);
+    const todayTasks = allFiltered.filter(t => t.focus_date === today);
+    const futureTasks = allFiltered.filter(t => t.focus_date > today);
+
+    const section = (title, tasks) => {
+        if (tasks.length === 0) return '';
+        return `
+            <div style="margin-bottom: 16px;">
+                <p style="font-size: 0.85em; font-weight: 600; color: var(--fg-495057); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px;">${title} (${tasks.length})</p>
+                <div style="background: var(--bg-fff); border: 1px solid var(--bd-dee2e6); border-radius: 8px; overflow: hidden;">${tasks.map(simpleTaskRowHtml).join('')}</div>
+            </div>`;
+    };
+
+    let html = `
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px;">
+            <button onclick="openAddTaskModal()" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;">
+                <i class="fa-solid fa-plus"></i> Add Task
+            </button>
+            <input type="text" placeholder="Search tasks..." value="${escapeHtml(focusSearchTerm)}"
+                   oninput="focusHandleSearch(this.value)"
+                   style="flex: 1; min-width: 140px; padding: 8px 12px; border: 1px solid var(--bd-ced4da); border-radius: 6px;">
+        </div>`;
+
+    if (allFiltered.length === 0) {
+        html += `<p style="text-align: center; color: var(--fg-6c757d); padding: 40px 20px;">No tasks in Focus Board yet.</p>`;
+        container.innerHTML = html;
+        return;
+    }
+
+    html += section('Today', todayTasks);
+    html += section("Previous days", pastTasks);
+    html += section("Future days", futureTasks);
+    html += `<p style="color: var(--fg-6c757d); font-size: 0.85em;">Showing ${allFiltered.length} of ${focusTasks.length} tasks</p>`;
+    container.innerHTML = html;
+}
+
+
 function renderFocusBoard(focusTasks, container) {
+    if (isMobileLayout()) {
+        renderFocusBoardMobileSimple(container, focusTasks);
+        return;
+    }
+
     const today = new Date().toISOString().slice(0, 10);
 
     const allFiltered = applyFocusFilters(focusTasks);

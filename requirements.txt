@@ -1,4 +1,4 @@
-# SynAppz v36 - Python Dependencies
+# SynAppz v37 - Python Dependencies
 # =====================================
 
 # Web Framework
